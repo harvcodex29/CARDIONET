@@ -11,7 +11,9 @@ Users can interact with the simulation through cursor movement, triggering local
 Tech Stack:
 
 Three.js
+
 Web Audio API
+
 JavaScript (ES6)
 
 
