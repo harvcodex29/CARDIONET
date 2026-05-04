@@ -1,4 +1,5 @@
-CARDIONET: Cardiac Conduction Countdown
+CARDIONET: Cardiac Conduction Countdown 
+Designed for Google I/O 2026 countdown
 
 CARDIONET is a frontend-based interactive simulation that visualizes cardiac conduction as a countdown experience. Built using Three.js for rendering and the Web Audio API for real-time sound synthesis, it transforms numerical progression into a physiological narrative.
 
