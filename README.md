@@ -18,6 +18,6 @@ JavaScript (ES6)
 
 
 Live Demo:
-https://harvcodex29.github.io/CARDIONET/ 
+https://cardionet.vercel.app/  
 
 This project focuses on blending real-time graphics, sound design, and conceptual storytelling into a cohesive interactive system.
