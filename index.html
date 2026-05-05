@@ -33,8 +33,7 @@
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
         }
 
-        #introModal,
-        #resetModal {
+        #introModal, #resetModal {
             position: fixed;
             top: 0;
             left: 0;
@@ -134,34 +133,33 @@
             background: #ff4444;
             opacity: 0.2;
         }
+		@media (max-width: 768px) {
+    .modal-content {
+        padding: 25px;
+        font-size: 10px;
+        max-width: 90%;
+    }
 
-        @media (max-width: 768px) {
-            .modal-content {
-                padding: 25px;
-                font-size: 10px;
-                max-width: 90%;
-            }
+    .action-btn {
+        padding: 12px 24px;
+        font-size: 10px;
+    }
 
-            .action-btn {
-                padding: 12px 24px;
-                font-size: 10px;
-            }
+    #topLeftControls {
+        top: 10px;
+        left: 10px;
+        gap: 6px;
+    }
 
-            #topLeftControls {
-                top: 10px;
-                left: 10px;
-                gap: 6px;
-            }
+    .hud-item {
+        font-size: 8px;
+        padding: 6px 10px;
+    }
 
-            .hud-item {
-                font-size: 8px;
-                padding: 6px 10px;
-            }
-
-            #audioHud {
-                bottom: 20px;
-            }
-        }
+    #audioHud {
+        bottom: 20px;
+    }
+}
     </style>
 </head>
 
@@ -169,7 +167,7 @@
 
     <div id="introModal">
         <div class="modal-content glass-panel">
-            GOOGLE I/O 2026
+	    GOOGLE I/O 2026
             CARDIONET<br><br>
             ANATOMICAL HEART SONIFICATION. TISSUE EVOLVES 10→1. HOVER FOR CONDUCTION.
             <div id="startBtn" class="action-btn">INITIALIZE RHYTHM</div>
@@ -185,18 +183,10 @@
     </div>
 
     <div id="topLeftControls">
-        <div class="hud-item glass-panel">
-            <span class="hud-label">TISSUE:</span><span id="labelOrganism">...</span>
-        </div>
-        <div class="hud-item glass-panel">
-            <span class="hud-label">BPM:</span><span id="labelScale">--</span>
-        </div>
-        <div class="hud-item glass-panel">
-            <span class="hud-label">CALCIUM:</span><span id="labelRoot">--</span>
-        </div>
-        <div class="hud-item glass-panel">
-            <span class="hud-label">CONTRACT:</span><span id="labelTexture">--</span>
-        </div>
+        <div class="hud-item glass-panel"><span class="hud-label">TISSUE:</span><span id="labelOrganism">...</span></div>
+        <div class="hud-item glass-panel"><span class="hud-label">BPM:</span><span id="labelScale">--</span></div>
+        <div class="hud-item glass-panel"><span class="hud-label">CALCIUM:</span><span id="labelRoot">--</span></div>
+        <div class="hud-item glass-panel"><span class="hud-label">CONTRACT:</span><span id="labelTexture">--</span></div>
     </div>
 
     <div id="audioHud">
@@ -238,66 +228,369 @@
         let pulseTimeout;
         let transitionTimeout;
 
-        let animationRunning = false;
+        const vertexShader = `
+            attribute float aRandom;
+            attribute float aHeight;
+            varying float vNoise;
+            varying float vDisplayHeight;
+            uniform float uTime;
+            uniform float uCalciumWave;
+            uniform float uHeartRate;
+            uniform vec2 uMouse;
 
-        function animate() {
-            if (animationRunning) return;
-            animationRunning = true;
+            void main() {
+                vNoise = aRandom;
+                vDisplayHeight = aHeight;
+                vec4 worldPos = instanceMatrix * vec4(position, 1.0);
+                float distMouse = distance(worldPos.xz, uMouse);
+                float mouseForce = smoothstep(20.0, 0.0, distMouse);
+                float calciumLevel = sin(uCalciumWave + distance(worldPos.xz, vec2(0.0)) * 0.12) * 0.5 + 0.5;
+                float bpmFactor = (uHeartRate / 60.0);
+                float pulse = sin(uTime * bpmFactor * 3.14159 * 2.0) * 0.5 + 0.5;
+                float lift = (calciumLevel * 0.7 + pulse * 0.3 + mouseForce * 0.5) * aHeight;
+                worldPos.y += lift;
+                gl_Position = projectionMatrix * viewMatrix * worldPos;
+            }
+        `;
 
-            function loop() {
-                if (!isStarted && currentLevel === 10) {
-                    animationRunning = false;
-                    return;
+        const fragmentShader = `
+            varying float vNoise;
+            varying float vDisplayHeight;
+            uniform vec3 uColorGrnd1;
+            uniform vec3 uColorGrnd2;
+            uniform vec3 uColorEdge;
+            uniform vec3 uColorPeak;
+            uniform float uCalciumWave;
+
+            void main() {
+                vec3 base = mix(uColorGrnd1, uColorGrnd2, vNoise);
+                float localPulse = sin(uCalciumWave + vNoise * 20.0) * 0.5 + 0.5;
+                vec3 finalColor = mix(base, uColorEdge, localPulse * 0.4);
+                if(vDisplayHeight > 1.0) {
+                    float glow = smoothstep(1.0, 8.0, vDisplayHeight);
+                    finalColor = mix(finalColor, uColorPeak, glow * 0.95);
                 }
+                gl_FragColor = vec4(finalColor, 1.0);
+            }
+        `;
 
-                requestAnimationFrame(loop);
+        window.onload = () => {
+            const startBtn = document.getElementById('startBtn');
+            const resetBtn = document.getElementById('resetBtn');
 
-                const delta = clock.getDelta();
-                const time = clock.getElapsedTime();
-                const u = stalkInstancedMesh.material.uniforms;
+            startBtn.onclick = () => {
+                if (isStarted) return;
+                startBtn.classList.add('loading');
+                init();
+            };
 
-                u.uTime.value = time;
-                u.uCalciumWave.value += delta * (u.uHeartRate.value / 60) * 3.5;
+            resetBtn.onclick = () => {
+                resetSystem();
+            };
+        };
 
-                const hAttrStalk = stalkInstancedMesh.geometry.attributes.aHeight;
-                const hAttrTip = tipInstancedMesh.geometry.attributes.aHeight;
-
-                for (let i = 0; i < TOTAL_STALKS; i++) {
-                    currentHeights[i] = THREE.MathUtils.lerp(currentHeights[i], targetHeights[i], 0.05);
-                    hAttrStalk.setX(i, currentHeights[i]);
-                    hAttrTip.setX(i, currentHeights[i]);
-                }
-
-                hAttrStalk.needsUpdate = true;
-                hAttrTip.needsUpdate = true;
-
-                raycaster.setFromCamera(mouse, camera);
-
-                const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-                const hit = new THREE.Vector3();
-
-                if (raycaster.ray.intersectPlane(plane, hit)) {
-                    u.uMouse.value.set(hit.x, hit.z);
-                }
-
-                if (analyser) {
-                    const d = new Uint8Array(analyser.frequencyBinCount);
-                    analyser.getByteFrequencyData(d);
-                    const bars = document.querySelectorAll('.visualizer-bar');
-
-                    for (let i = 0; i < bars.length; i++) {
-                        bars[i].style.height = (d[i] / 255 * 30 + 10) + 'px';
-                        bars[i].style.opacity = 0.2 + (d[i] / 255);
-                    }
-                }
-
-                renderer.render(scene, camera);
+        async function init() {
+            isStarted = true;
+            if (!audioCtx) initAudio();
+            
+            // Re-boost volume on init
+            if (masterGain) {
+                masterGain.gain.setTargetAtTime(1.8, audioCtx.currentTime, 0.1);
             }
 
-            loop();
+            if (!scene) {
+                initScene();
+                await setupGeometryAsync();
+            }
+            
+            document.getElementById('introModal').style.opacity = '0';
+            document.querySelector('canvas').style.opacity = '1';
+            document.getElementById('topLeftControls').style.opacity = '1';
+            document.getElementById('audioHud').style.opacity = '1';
+            
+            setTimeout(() => { document.getElementById('introModal').style.display = 'none'; }, 1000);
+
+            animate();
+            currentLevel = 10;
+            startLevelTransition();
+            heartbeatLoop();
+
+            window.addEventListener('mousemove', (e) => {
+                mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            });
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function resetSystem() {
+            isStarted = false;
+            clearTimeout(pulseTimeout);
+            clearTimeout(transitionTimeout);
+            
+            const resetModal = document.getElementById('resetModal');
+            const introModal = document.getElementById('introModal');
+            const startBtn = document.getElementById('startBtn');
+
+            resetModal.style.opacity = '0';
+            setTimeout(() => {
+                resetModal.style.display = 'none';
+                introModal.style.display = 'flex';
+                setTimeout(() => {
+                    introModal.style.opacity = '1';
+                    startBtn.classList.remove('loading');
+                }, 50);
+            }, 1000);
+
+            document.querySelector('canvas').style.opacity = '0';
+            document.getElementById('topLeftControls').style.opacity = '0';
+            document.getElementById('audioHud').style.opacity = '0';
+        }
+
+        function initAudio() {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            masterGain = audioCtx.createGain();
+            masterGain.gain.value = 1.8; 
+
+            const compressor = audioCtx.createDynamicsCompressor();
+            compressor.threshold.setValueAtTime(-10, audioCtx.currentTime);
+            compressor.knee.setValueAtTime(40, audioCtx.currentTime);
+            compressor.ratio.setValueAtTime(12, audioCtx.currentTime);
+            compressor.attack.setValueAtTime(0, audioCtx.currentTime);
+            compressor.release.setValueAtTime(0.25, audioCtx.currentTime);
+
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 64;
+
+            masterGain.connect(compressor);
+            compressor.connect(analyser);
+            analyser.connect(audioCtx.destination);
+        }
+
+        function heartbeatLoop() {
+            if (!isStarted) return;
+
+            const profile = profiles[currentLevel] || profiles[1];
+            const bpm = profile.bpm;
+            const interval = (60 / bpm) * 1000;
+
+            playCardiacPulse(45, 0.45, 0.9, 200);
+
+            setTimeout(() => {
+                if (!isStarted) return;
+                const dubFreq = 65 + (10 - currentLevel) * 5;
+                playCardiacPulse(dubFreq, 0.35, 0.7, 400);
+            }, interval * 0.32);
+
+            pulseTimeout = setTimeout(heartbeatLoop, interval);
+        }
+
+        function playCardiacPulse(freq, decay, vol, filterFreq) {
+            if (!audioCtx || !isStarted) return;
+            const now = audioCtx.currentTime;
+            
+            const osc = audioCtx.createOscillator();
+            const sub = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            const filter = audioCtx.createBiquadFilter();
+
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now);
+            osc.frequency.exponentialRampToValueAtTime(10, now + decay);
+
+            sub.type = 'sine';
+            sub.frequency.setValueAtTime(freq * 0.5, now);
+            sub.frequency.exponentialRampToValueAtTime(5, now + decay);
+
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(filterFreq, now);
+            filter.Q.value = 5;
+
+            osc.connect(filter);
+            sub.connect(filter);
+            filter.connect(gain);
+            gain.connect(masterGain);
+
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(vol, now + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + decay);
+
+            osc.start(now);
+            sub.start(now);
+            osc.stop(now + decay + 0.1);
+            sub.stop(now + decay + 0.1);
+        }
+
+        function initScene() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050505);
+            clock = new THREE.Clock();
+            camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 1000);
+            camera.position.set(0, 110, 180);
+            camera.lookAt(0, 0, 0);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+        }
+
+        async function setupGeometryAsync() {
+            const stalkGeom = new THREE.CylinderGeometry(0.015, 0.015, 3.5, 4, 1);
+            stalkGeom.translate(0, 1.75, 0);
+            const stalkMat = new THREE.ShaderMaterial({
+                vertexShader, fragmentShader,
+                uniforms: {
+                    uTime: { value: 0 }, uCalciumWave: { value: 0 }, uHeartRate: { value: 60 },
+                    uMouse: { value: new THREE.Vector2() }, uColorGrnd1: { value: new THREE.Color() },
+                    uColorGrnd2: { value: new THREE.Color() }, uColorEdge: { value: new THREE.Color() },
+                    uColorPeak: { value: new THREE.Color() }
+                }
+            });
+
+            stalkInstancedMesh = new THREE.InstancedMesh(stalkGeom, stalkMat, TOTAL_STALKS);
+            tipInstancedMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 4, 4), stalkMat, TOTAL_STALKS);
+            
+            const randoms = new Float32Array(TOTAL_STALKS);
+            const heights = new Float32Array(TOTAL_STALKS);
+            const dummy = new THREE.Object3D();
+
+            for (let i = 0; i < TOTAL_STALKS; i++) {
+                if (i % 5000 === 0) await new Promise(r => requestAnimationFrame(r));
+                const t = Math.random() * Math.PI * 2;
+                const r = Math.sqrt(Math.random());
+                const hx = 16 * Math.pow(Math.sin(t), 3) * r;
+                const hy = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) * r;
+                dummy.position.set(hx * 5.8, 0, (hy + 2.0) * 5.8); 
+                dummy.updateMatrix();
+                stalkInstancedMesh.setMatrixAt(i, dummy.matrix);
+                tipInstancedMesh.setMatrixAt(i, dummy.matrix);
+                randoms[i] = Math.random();
+                heights[i] = 0.5; currentHeights[i] = 0.5; targetHeights[i] = 0.5;
+            }
+
+            stalkInstancedMesh.geometry.setAttribute('aRandom', new THREE.InstancedBufferAttribute(randoms, 1));
+            stalkInstancedMesh.geometry.setAttribute('aHeight', new THREE.InstancedBufferAttribute(heights, 1));
+            tipInstancedMesh.geometry.setAttribute('aRandom', new THREE.InstancedBufferAttribute(randoms, 1));
+            tipInstancedMesh.geometry.setAttribute('aHeight', new THREE.InstancedBufferAttribute(heights, 1));
+            
+            scene.add(stalkInstancedMesh); 
+            scene.add(tipInstancedMesh);
+        }
+
+        function startLevelTransition() {
+            if (!isStarted) return;
+
+            if (currentLevel < 1) {
+                // Fade out audio on sequence complete
+                if (masterGain) {
+                    masterGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.3);
+                }
+                
+                // Show reset screen
+                const resetModal = document.getElementById('resetModal');
+                resetModal.style.display = 'flex';
+                setTimeout(() => resetModal.style.opacity = '1', 50);
+                return;
+            }
+
+            const profile = profiles[currentLevel];
+            document.getElementById('labelOrganism').innerText = profile.name;
+            document.getElementById('labelScale').innerText = profile.bpm;
+            document.getElementById('labelRoot').innerText = currentLevel > 4 ? 'STEADY' : 'FIBRILLATION';
+            document.getElementById('labelTexture').innerText = currentLevel > 4 ? 'SMOOTH' : 'HYPERTROPHIC';
+            
+            const u = stalkInstancedMesh.material.uniforms;
+            u.uColorGrnd1.value.set(profile.colors.g1);
+            u.uColorGrnd2.value.set(profile.colors.g2);
+            u.uColorEdge.value.set(profile.colors.edge);
+            u.uColorPeak.value.set(profile.colors.peak);
+            u.uHeartRate.value = profile.bpm;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'black'; ctx.fillRect(0, 0, 128, 128);
+            ctx.fillStyle = 'white'; ctx.font = 'bold 90px Arial';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(currentLevel, 64, 64);
+            const imgData = ctx.getImageData(0, 0, 128, 128).data;
+            
+            const matrix = new THREE.Matrix4();
+            const pos = new THREE.Vector3();
+            for (let i = 0; i < TOTAL_STALKS; i++) {
+                stalkInstancedMesh.getMatrixAt(i, matrix);
+                pos.setFromMatrixPosition(matrix);
+                const ux = (pos.x / 140) + 0.5;
+                const vy = ((pos.z / 5.8) - 2.0) / 25.5 + 0.5;
+                let hTarget = 0.5 + Math.random() * 1.2;
+                if (ux >= 0.1 && ux <= 0.9 && vy >= 0.1 && vy <= 0.9) {
+                    if (imgData[(Math.floor(vy * 127) * 128 + Math.floor(ux * 127)) * 4] > 128) hTarget = 9.0 + Math.random() * 2.0;
+                }
+                targetHeights[i] = hTarget;
+            }
+
+            transitionTimeout = setTimeout(() => {
+                if (isStarted) {
+                    currentLevel--;
+                    startLevelTransition();
+                }
+            }, DURATION_PER_NUMBER);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        let animationRunning = false;
+
+		function animate() {
+    		if (animationRunning) return;
+    		animationRunning = true;
+
+    		function loop() {
+        		if (!isStarted && currentLevel === 10) {
+            	animationRunning = false;
+            	return;
+        		}
+
+        		requestAnimationFrame(loop);
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+            const u = stalkInstancedMesh.material.uniforms;
+            u.uTime.value = time;
+            u.uCalciumWave.value += delta * (u.uHeartRate.value / 60) * 3.5;
+
+            const hAttrStalk = stalkInstancedMesh.geometry.attributes.aHeight;
+            const hAttrTip = tipInstancedMesh.geometry.attributes.aHeight;
+            for (let i = 0; i < TOTAL_STALKS; i++) {
+                currentHeights[i] = THREE.MathUtils.lerp(currentHeights[i], targetHeights[i], 0.05);
+                hAttrStalk.setX(i, currentHeights[i]); 
+                hAttrTip.setX(i, currentHeights[i]);
+            }
+            hAttrStalk.needsUpdate = true; 
+            hAttrTip.needsUpdate = true;
+
+            raycaster.setFromCamera(mouse, camera);
+            const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+            const hit = new THREE.Vector3();
+            if (raycaster.ray.intersectPlane(plane, hit)) u.uMouse.value.set(hit.x, hit.z);
+
+            if (analyser) {
+                const d = new Uint8Array(analyser.frequencyBinCount);
+                analyser.getByteFrequencyData(d);
+                const bars = document.querySelectorAll('.visualizer-bar');
+                for(let i=0; i<bars.length; i++) {
+                    bars[i].style.height = (d[i] / 255 * 30 + 10) + 'px';
+                    bars[i].style.opacity = 0.2 + (d[i] / 255);
+                }
+            }
+                    renderer.render(scene, camera);
+        }
+
+        loop();
+
         }
     </script>
-
 </body>
-
 </html>
