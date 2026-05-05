@@ -201,7 +201,7 @@
 
     <script>
         const DURATION_PER_NUMBER = 6000;
-        const TOTAL_STALKS = /Mobi|Android/i.test(navigator.userAgent) ? 12000 : 42000;
+        const TOTAL_STALKS = /Mobi|Android/i.test(navigator.userAgent) ? 12000 : 5000;
 
         const profiles = {
             10: { name: 'Normal Sinus', bpm: 60, colors: { g1: '#1a0505', g2: '#600000', edge: '#ff3333', peak: '#ffaaaa' } },
@@ -544,53 +544,63 @@
 
         let animationRunning = false;
 
-		function animate() {
-    		if (animationRunning) return;
-    		animationRunning = true;
+function animate() {
+    if (animationRunning) return;
+    animationRunning = true;
 
-    		function loop() {
-        		if (!isStarted && currentLevel === 10) {
-            	animationRunning = false;
-            	return;
-        		}
-
-        		requestAnimationFrame(loop);
-            const delta = clock.getDelta();
-            const time = clock.getElapsedTime();
-            const u = stalkInstancedMesh.material.uniforms;
-            u.uTime.value = time;
-            u.uCalciumWave.value += delta * (u.uHeartRate.value / 60) * 3.5;
-
-            const hAttrStalk = stalkInstancedMesh.geometry.attributes.aHeight;
-            const hAttrTip = tipInstancedMesh.geometry.attributes.aHeight;
-            for (let i = 0; i < TOTAL_STALKS; i++) {
-                currentHeights[i] = THREE.MathUtils.lerp(currentHeights[i], targetHeights[i], 0.05);
-                hAttrStalk.setX(i, currentHeights[i]); 
-                hAttrTip.setX(i, currentHeights[i]);
-            }
-            hAttrStalk.needsUpdate = true; 
-            hAttrTip.needsUpdate = true;
-
-            raycaster.setFromCamera(mouse, camera);
-            const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-            const hit = new THREE.Vector3();
-            if (raycaster.ray.intersectPlane(plane, hit)) u.uMouse.value.set(hit.x, hit.z);
-
-            if (analyser) {
-                const d = new Uint8Array(analyser.frequencyBinCount);
-                analyser.getByteFrequencyData(d);
-                const bars = document.querySelectorAll('.visualizer-bar');
-                for(let i=0; i<bars.length; i++) {
-                    bars[i].style.height = (d[i] / 255 * 30 + 10) + 'px';
-                    bars[i].style.opacity = 0.2 + (d[i] / 255);
-                }
-            }
-                    renderer.render(scene, camera);
+    function loop() {
+        if (!isStarted && currentLevel === 10) {
+            animationRunning = false;
+            return;
         }
 
-        loop();
+        requestAnimationFrame(loop);
 
+        const delta = clock.getDelta();
+        const time = clock.getElapsedTime();
+        const u = stalkInstancedMesh.material.uniforms;
+
+        u.uTime.value = time;
+        u.uCalciumWave.value += delta * (u.uHeartRate.value / 60) * 3.5;
+
+        const hAttrStalk = stalkInstancedMesh.geometry.attributes.aHeight;
+        const hAttrTip = tipInstancedMesh.geometry.attributes.aHeight;
+
+        for (let i = 0; i < TOTAL_STALKS; i++) {
+            currentHeights[i] = THREE.MathUtils.lerp(currentHeights[i], targetHeights[i], 0.05);
+            hAttrStalk.setX(i, currentHeights[i]);
+            hAttrTip.setX(i, currentHeights[i]);
         }
+
+        hAttrStalk.needsUpdate = true;
+        hAttrTip.needsUpdate = true;
+
+        raycaster.setFromCamera(mouse, camera);
+
+        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const hit = new THREE.Vector3();
+
+        if (raycaster.ray.intersectPlane(plane, hit)) {
+            u.uMouse.value.set(hit.x, hit.z);
+        }
+
+        if (analyser) {
+            const d = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteFrequencyData(d);
+
+            const bars = document.querySelectorAll('.visualizer-bar');
+
+            for (let i = 0; i < bars.length; i++) {
+                bars[i].style.height = (d[i] / 255 * 30 + 10) + 'px';
+                bars[i].style.opacity = 0.2 + (d[i] / 255);
+            }
+        }
+
+        renderer.render(scene, camera);
+    }
+
+    loop();
+}
     </script>
 </body>
 </html>
